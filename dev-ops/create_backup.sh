@@ -9,6 +9,7 @@
 # Usage: ./create_backup.sh
 #
 # When setting up the cron command, be aware of the path to your git checkout!
+# Also ensure that the aws command is in cron's PATH as well as yours.
 # Example cron commands:
 # At 3:30 am create a backup and send the logs to /var/log/cron
 # 30 3 * * * /home/ubuntu/MedBook/scripts/create_backup.sh > /home/ubuntu/backup_logs.txt 2>&1
@@ -50,14 +51,16 @@ cd ..
 echo "creating tarball..."
 tar zcvfh $backup_name.tgz $backup_name
 
-# Upload the backup to ceph.
-echo "Copying backup to ceph..."
-aws s3 cp --profile ceph --endpoint http://ceph-gw-01.pod $backup_name.tgz s3://medbook
-
-
+# If we're on the latest prod (medbook), upload to ceph.
 # Alternatively: send the backup to the backup box
-# echo "rsync to the backup server..."
-# rsync $backup_name.tgz ubuntu@backup.medbook.io:/backups
+if [ $HOSTNAME = "medbook" ] ; then
+  # Upload the backup to ceph.
+  echo "Copying backup to ceph..."
+  aws s3 cp --profile ceph --endpoint http://ceph-gw-01.pod $backup_name.tgz s3://medbook
+else
+  echo "rsync to the backup server..."
+  rsync $backup_name.tgz ubuntu@backup.medbook.io:/backups
+fi
 
 # Delete the local backup
 echo "deleting local backup..."

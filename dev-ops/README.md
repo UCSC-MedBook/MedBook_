@@ -61,7 +61,14 @@ cd MedBook_
 df -h
 
 # set up backups (see create_backup.sh for cron command)
+# If you're backing up to AWS, ensure that the aws command can be run from cron:
+which aws
+# Then, set up a cron job:
 crontab -e
+*  *  *  * * set > ~/cron.env 
+# Check the PATH variable in cron.env and confirm that aws's dir is in it.
+# If not, when you edit crontab, add the PATH=(whatever) line as necessary
+# to include the aws dir.
 
 # run rsync for /filestore every 15 seconds as the hosts switch over
 while sleep 15; do rsync -rah ubuntu@medbook.io:/filestore /filestore; done
