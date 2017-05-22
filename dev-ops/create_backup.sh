@@ -2,15 +2,14 @@
 
 # This script creates a backup in the form of a .tgz file containing a
 # mongodump and a copy of the filestore folder. The script then sends the
-# backup script to the backup box (backup.medbook.io) for safekeeping and
+# backup script to the backup ceph container for safekeeping and
 # easy retrieval.
 #
-# When running this on an Azure box, it's usually helpful to go to /mnt
-# becasue there's lots of free space there.
 #
 # Usage: ./create_backup.sh
 #
 # When setting up the cron command, be aware of the path to your git checkout!
+# Also ensure that the aws command is in cron's PATH as well as yours.
 # Example cron commands:
 # At 3:30 am create a backup and send the logs to /var/log/cron
 # 30 3 * * * /home/ubuntu/MedBook/scripts/create_backup.sh > /home/ubuntu/backup_logs.txt 2>&1
@@ -26,6 +25,7 @@ mkdir $backup_name
 cd $backup_name
 
 # dump the database
+# for prod on openstack, $HOSTNAME=medbook
 mongo_host="localhost"
 if [ $HOSTNAME = "medbook-prod" ] ; then
   mongo_host="mongo"
@@ -34,9 +34,12 @@ elif [ $HOSTNAME = "medbook-prod-2" ] ; then
 elif [ $HOSTNAME = "medbook-staging-2" ] ; then
   mongo_host="mongo-staging"
 fi
+
 mongodump -d MedBook --host $mongo_host
 
 # create a copy of the filestore
+# note that if /filestore is a symlink it will copy the symlink itself,
+# not the dir the symlink points to.
 echo "copying filestore..."
 cp -r /filestore .
 
@@ -44,18 +47,28 @@ cp -r /filestore .
 cd ..
 
 # tgz the backup to send it to the backup box
+# include h to archive any symbolic links
 echo "creating tarball..."
-tar zcvf $backup_name.tgz $backup_name
+tar zcvfh $backup_name.tgz $backup_name
 
-# send the backup to the backup box
-echo "rsync to the backup server..."
-rsync $backup_name.tgz ubuntu@backup.medbook.io:/backups
+# If we're on the latest prod (medbook), upload to ceph.
+# Alternatively: send the backup to the backup box
+if [ $HOSTNAME = "medbook" ] ; then
+  # Upload the backup to ceph.
+  echo "Copying backup to ceph..."
+  aws s3 cp --profile ceph --endpoint http://ceph-gw-01.pod $backup_name.tgz s3://medbook
+else
+  echo "rsync to the backup server..."
+  rsync $backup_name.tgz ubuntu@backup.medbook.io:/backups
+fi
 
-# delete the local backup
+# Delete the local backup
+echo "deleting local backup..."
 rm -rf $backup_name
 rm -rf $backup_name.tgz
 
-# if backing up from production, restore to staging
+# if backing up from the old azure production, restore to staging
+# Not currently active
 if [ $HOSTNAME = "medbook-prod-2" ] ; then
   echo "restoring on staging..."
 
